@@ -1,0 +1,32 @@
+{
+  "name": "markdownwizard-tools",
+  "version": "0.1.0",
+  "description": "Markdown rendering and document exporters behind markdownwizard.app \u2014 browser-local, no uploads.",
+  "type": "module",
+  "license": "MIT",
+  "exports": {
+    ".": "./src/index.js",
+    "./iife": "./dist/markdownwizard-tools.iife.js"
+  },
+  "files": [
+    "src",
+    "dist"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/TGWAB/markdownwizard-tools.git"
+  },
+  "scripts": {
+    "build": "node build/build.mjs",
+    "prepare": "node build/build.mjs"
+  },
+  "peerDependencies": {
+    "marked": ">=12",
+    "dompurify": ">=3",
+    "docx": ">=8",
+    "pdfmake": ">=0.2"
+  },
+  "devDependencies": {
+    "esbuild": "^0.24.0"
+  }
+}
