@@ -18,6 +18,7 @@
   },
   "scripts": {
     "build": "node build/build.mjs",
+    "lint": "eslint .",
     "prepare": "node build/build.mjs",
     "test": "node --experimental-test-module-mocks --test test/pdf-vfs.test.js"
   },
@@ -28,6 +29,9 @@
     "pdfmake": ">=0.2"
   },
   "devDependencies": {
-    "esbuild": "^0.24.0"
+    "@eslint/js": "^10.0.1",
+    "esbuild": "^0.24.0",
+    "eslint": "^10.9.1",
+    "globals": "^17.12.0"
   }
 }

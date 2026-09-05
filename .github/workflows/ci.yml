@@ -1,0 +1,123 @@
+# TGWAB CI, library and extension shape—DEV-STANDARDS §15.
+#
+# Place at:  .github/workflows/ci.yml
+#
+# WHEN TO USE THIS INSTEAD OF templates/ci.yml. The site template gates a BUILD:
+# it runs `npm run build`, scans `dist/` for eval and for mailto:, and drives a
+# Playwright harness under the real _headers CSP. A package that ships its source
+# has no dist/, no CSP and no pages, so every one of those steps either fails or
+# passes vacuously. This template is the same contract with the build-shaped
+# gates removed—not a weaker one.
+#
+# Use it for: tool/feature packages consumed by a site (textwizard-tools,
+# punctuationwizard-tools, markdownwizard-tools) and browser extensions whose
+# "build" is a store zip rather than a site.
+# Use templates/ci.yml for: anything that produces a deployable dist/.
+#
+# The job is named `ci` because templates/ruleset-main.json requires the
+# status-check context "ci" (§4). Rename one and you MUST rename both, or merges
+# block forever. A repo whose existing job is named something else must change
+# the ruleset in the SAME change, or the required check never reports.
+#
+# Action SHAs are pinned per §15—a tag is mutable, a SHA is not. Re-resolve
+# before first use:
+#   gh api repos/actions/checkout/git/refs/tags/v7.0.1 --jq .object.sha
+
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions: {}
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  ci:                                   # job name == the required status-check context
+    runs-on: ubuntu-latest
+    # The same value as templates/ci.yml, chosen against the measurement recorded
+    # there. Keep them equal: this comment used to argue for 10 by contrast with
+    # ci.yml's 15, which made it a claim about a second file that went wrong the
+    # moment that file moved.
+    #
+    # A warm run here is 12–15s. The headroom is not for the suite, it is for a
+    # cold npm cache—this template's own first adopter, bookmarkwizard-extension,
+    # spent 301s in `npm ci` on one successful run of four.
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    # A repo that genuinely cannot run one of the gates below uncomments the
+    # matching line and names the REASON—the MUSTER_OPT_OUT=1 pattern. The step
+    # prints it as a run annotation, so the reason travels with every run instead
+    # of living in someone's memory. "Not adopted yet" is not a reason.
+    # env:
+    #   LINT_OPT_OUT: "…"
+    #   TEST_OPT_OUT: "…"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc     # never a hardcoded node-version: (§15)
+          cache: npm
+
+      # READ THIS BEFORE ADOPTING: `npm ci` REQUIRES package-lock.json and fails
+      # outright without one. It is not the safe boilerplate it looks like, and
+      # it is the first step that will break.
+      #
+      # Several packages in the estate have a package.json and NO lockfile—they
+      # had no dependencies, so nothing ever generated one. Adding `eslint` as
+      # the first devDependency generates it, which means the adopting PR CREATES
+      # the lockfile as part of the change and must commit it. A repo that adds
+      # this workflow without committing a lockfile fails here on its first run.
+      #
+      # Exits non-zero if package-lock.json has drifted from package.json.
+      - run: npm ci
+
+      # §15 gate: lint MUST run, and MUST fail when there is no lint to run.
+      # Deliberately NOT `npm run lint --if-present`: npm exits 0 when the script
+      # is absent, so that form reports a passing lint which never executed. A
+      # control that passes by not running is the defect class lint exists to
+      # catch, and a library template shipping it would recreate the gap #105
+      # closed.
+      - name: lint
+        run: |
+          set -euo pipefail
+          if [ -n "${LINT_OPT_OUT:-}" ]; then
+            echo "::notice title=lint opted out (§15)::${LINT_OPT_OUT}"
+            exit 0
+          fi
+          if ! node -e "process.exit((require('./package.json').scripts||{}).lint?0:1)"; then
+            echo "::error title=no lint script (§15)::CI MUST run lint. Add a \"lint\" script (eslint .) plus eslint.config.js from templates/, or declare LINT_OPT_OUT with a reason on the ci job."
+            exit 1
+          fi
+          npm run lint
+
+      # §15 gate: the test suite, on the same terms and for the same reason.
+      #
+      # This is not boilerplate symmetry. A repo whose source renders HTML MUST
+      # ship the interpolated-JSON fixture (§15), and a fixture that no CI run
+      # executes is decoration—the precise failure the fixture itself exists to
+      # prevent, one level up. So a repo carrying the fixture and no test script
+      # must fail here rather than quietly skip.
+      - name: test
+        run: |
+          set -euo pipefail
+          if [ -n "${TEST_OPT_OUT:-}" ]; then
+            echo "::notice title=tests opted out (§15)::${TEST_OPT_OUT}"
+            exit 0
+          fi
+          if ! node -e "process.exit((require('./package.json').scripts||{}).test?0:1)"; then
+            echo "::error title=no test script (§15)::A repo shipping the §15 fixture MUST run it. Add a \"test\" script, or declare TEST_OPT_OUT with a reason on the ci job."
+            exit 1
+          fi
+          npm test
+
+      # Production tree only—a dev-tree advisory never reaches a user (§15).
+      - run: npm audit --omit=dev --audit-level=high

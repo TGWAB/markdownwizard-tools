@@ -50,8 +50,8 @@ export function debounce(fn, ms) {
 
 export const store = {
   get: function (k) { try { return localStorage.getItem('mdw:' + k); } catch (e) { return null; } },
-  set: function (k, v) { try { localStorage.setItem('mdw:' + k, v); } catch (e) {} },
-  del: function (k) { try { localStorage.removeItem('mdw:' + k); } catch (e) {} }
+  set: function (k, v) { try { localStorage.setItem('mdw:' + k, v); } catch (e) { /* storage unavailable or full: a dropped preference is not worth throwing over */ } },
+  del: function (k) { try { localStorage.removeItem('mdw:' + k); } catch (e) { /* as above: nothing to recover from a failed delete */ } }
 };
 
 /* -------------------------------------------------------------- document */
@@ -64,6 +64,9 @@ export function baseName(md, title) {
     if (m) name = m[1].replace(/[*_~`#]/g, '').trim();
   }
   if (!name) name = 'document';
+  // The C0 control range is deliberate: these bytes are illegal in filenames on
+  // every OS, so a download name must have them stripped rather than pass them through.
+  // eslint-disable-next-line no-control-regex
   name = name.replace(/[\\/:*?"<>|\x00-\x1f]/g, '-').replace(/\s+/g, ' ').trim();
   return (name.slice(0, 120) || 'document');
 }

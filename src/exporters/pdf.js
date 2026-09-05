@@ -117,7 +117,7 @@ export function pdf(md, base) {
 
 /* ------------------------------------------------------------ inline text */
 
-function textRuns(tokens, ctx) {
+function textRuns(tokens) {
   var out = [];
   inlines(tokens).forEach(function (r) {
     if (r.br) { out.push({ text: '\n' }); return; }
@@ -163,7 +163,7 @@ function blocks(tokens, ctx) {
     switch (t.type) {
       case 'space': break;
       case 'heading':
-        out.push({ text: textRuns(t.tokens, ctx), style: 'h' + Math.min(t.depth, 6) });
+        out.push({ text: textRuns(t.tokens), style: 'h' + Math.min(t.depth, 6) });
         break;
       case 'paragraph': case 'text': {
         if (t.type === 'paragraph' && isImageOnlyParagraph(t)) {
@@ -180,7 +180,7 @@ function blocks(tokens, ctx) {
           });
           break;
         }
-        out.push({ text: textRuns(t.tokens != null ? t.tokens : [t], ctx), margin: [0, 3, 0, 8] });
+        out.push({ text: textRuns(t.tokens != null ? t.tokens : [t]), margin: [0, 3, 0, 8] });
         break;
       }
       case 'code':
@@ -226,7 +226,7 @@ function blocks(tokens, ctx) {
         out.push(list(t, ctx));
         break;
       case 'table':
-        out.push(table(t, ctx));
+        out.push(table(t));
         break;
       case 'hr':
         out.push({
@@ -240,7 +240,7 @@ function blocks(tokens, ctx) {
         break;
       }
       default:
-        if (t.tokens) out.push({ text: textRuns(t.tokens, ctx), margin: [0, 3, 0, 8] });
+        if (t.tokens) out.push({ text: textRuns(t.tokens), margin: [0, 3, 0, 8] });
     }
   });
   return out;
@@ -251,7 +251,7 @@ function list(t, ctx) {
     var stack = [];
     (item.tokens || []).forEach(function (bt) {
       if (bt.type === 'text' || bt.type === 'paragraph') {
-        var runsArr = textRuns(bt.tokens != null ? bt.tokens : [bt], ctx);
+        var runsArr = textRuns(bt.tokens != null ? bt.tokens : [bt]);
         if (item.task && stack.length === 0) {
           runsArr.unshift({ text: item.checked ? '[x] ' : '[  ] ', fontSize: 9.5, color: '#666672' });
         }
@@ -270,11 +270,11 @@ function list(t, ctx) {
   return node;
 }
 
-function table(t, ctx) {
+function table(t) {
   var aligns = (t.align || []).map(function (a) { return a || 'left'; });
   function cells(row, isHeader) {
     return row.map(function (c, i) {
-      var o = { text: c ? textRuns(c.tokens, ctx) : '', alignment: aligns[i] || 'left' };
+      var o = { text: c ? textRuns(c.tokens) : '', alignment: aligns[i] || 'left' };
       if (isHeader) { o.bold = true; o.fillColor = '#EFEDF6'; }
       return o;
     });
