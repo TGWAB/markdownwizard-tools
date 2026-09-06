@@ -20,7 +20,7 @@
     "build": "node build/build.mjs",
     "lint": "eslint .",
     "prepare": "node build/build.mjs",
-    "test": "node --experimental-test-module-mocks --test test/pdf-vfs.test.js"
+    "test": "node --experimental-test-module-mocks --test test/*.test.js"
   },
   "peerDependencies": {
     "marked": ">=12",
