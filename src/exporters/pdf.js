@@ -12,39 +12,112 @@ import { inlines, collectImages, loadImages } from '../common.js';
 
 const CONTENT_W = 504; // LETTER (612pt) minus 54pt margins each side
 
+// pdfmake's <script> vfs_fonts.js self-registers against a global. Through a
+// bundler there is no global, so the package that imports pdfmake must register
+// the fonts itself. Loaded lazily inside pdf(): vfs_fonts is ~768 KB of base64
+// and a consumer that only exports .txt must not pay that cost.
+var fontsReady = null;
+
+function vfsHasRoboto(vfs) {
+  return !!(vfs && (vfs['Roboto-Medium.ttf'] || vfs['Roboto-Regular.ttf']));
+}
+
+function unwrapVfs(mod) {
+  var vfs = mod;
+  if (vfs && vfs.default && typeof vfs.default === 'object' && !vfsHasRoboto(vfs)) {
+    vfs = vfs.default;
+  }
+  if (vfs && vfs.pdfMake && vfs.pdfMake.vfs) vfs = vfs.pdfMake.vfs;
+  return vfs;
+}
+
+function applyVfs(lib, vfs) {
+  if (!lib || !vfs) return;
+  if (typeof lib.addVirtualFileSystem === 'function') lib.addVirtualFileSystem(vfs);
+  else lib.vfs = vfs;
+}
+
+function ensureFonts() {
+  if (!fontsReady) fontsReady = loadFonts();
+  return fontsReady;
+}
+
+function loadFonts() {
+  if (vfsHasRoboto(pdfMake && pdfMake.vfs)) {
+    applyVfs(pdfMake, pdfMake.vfs);
+    return Promise.resolve();
+  }
+  return import('pdfmake/build/vfs_fonts.js').then(function (mod) {
+    var vfs = unwrapVfs(mod);
+    if (vfsHasRoboto(vfs)) applyVfs(pdfMake, vfs);
+    // Empty module: the IIFE build aliases this import to a stub because the
+    // offline page already loaded vfs_fonts.js as a <script>. A later getBlob
+    // timeout is the loud failure if fonts are truly missing.
+  });
+}
+
+// getBlob never invokes its callback when a font is missing; it only
+// console.warns. Bound the wait so a missing Roboto is an error, not a stall.
+var GETBLOB_MS = 15000;
+
+export function blobFromPdf(doc, ms) {
+  if (ms == null) ms = GETBLOB_MS;
+  return new Promise(function (resolve, reject) {
+    var settled = false;
+    var timer = setTimeout(function () {
+      finish(new Error(
+        'PDF export timed out after ' + ms + 'ms. ' +
+        'pdfmake does not invoke getBlob when a font is missing from the virtual file system ' +
+        "(File 'Roboto-Medium.ttf' not found)."
+      ));
+    }, ms);
+    function finish(err, blob) {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (err) reject(err);
+      else resolve(blob);
+    }
+    try {
+      // pdfmake 0.2 calls the callback; 0.3's getBlob is async and returns a Promise.
+      var ret = doc.getBlob(function (blob) { finish(null, blob); });
+      if (ret && typeof ret.then === 'function') {
+        ret.then(function (blob) { finish(null, blob); }, function (err) { finish(err); });
+      }
+    } catch (e) { finish(e); }
+  });
+}
+
 export function pdf(md, base) {
   var tokens = lex(md);
   return loadImages(collectImages(tokens)).then(function (images) {
-    var dd = {
-      info: { title: base || 'document', creator: 'Markdown Wizard' },
-      pageSize: 'LETTER',
-      pageMargins: [54, 60, 54, 66],
-      defaultStyle: { fontSize: 11, lineHeight: 1.35, color: '#1b1b24' },
-      styles: {
-        h1: { fontSize: 23, bold: true, margin: [0, 14, 0, 6] },
-        h2: { fontSize: 18, bold: true, margin: [0, 13, 0, 5] },
-        h3: { fontSize: 14.5, bold: true, margin: [0, 11, 0, 4] },
-        h4: { fontSize: 12.5, bold: true, margin: [0, 10, 0, 4] },
-        h5: { fontSize: 11.5, bold: true, margin: [0, 9, 0, 3] },
-        h6: { fontSize: 11, bold: true, color: '#666672', margin: [0, 9, 0, 3] }
-      },
-      footer: function (page, total) {
-        return { text: page + ' / ' + total, alignment: 'center', fontSize: 9, color: '#9a9aa6', margin: [0, 24, 0, 0] };
-      },
-      content: blocks(tokens, { images: images })
-    };
-    var pdf = pdfMake.createPdf(dd);
-    return new Promise(function (resolve, reject) {
-      try {
-        pdf.getBlob(function (blob) { resolve(blob); });
-      } catch (e) { reject(e); }
+    return ensureFonts().then(function () {
+      var dd = {
+        info: { title: base || 'document', creator: 'Markdown Wizard' },
+        pageSize: 'LETTER',
+        pageMargins: [54, 60, 54, 66],
+        defaultStyle: { fontSize: 11, lineHeight: 1.35, color: '#1b1b24' },
+        styles: {
+          h1: { fontSize: 23, bold: true, margin: [0, 14, 0, 6] },
+          h2: { fontSize: 18, bold: true, margin: [0, 13, 0, 5] },
+          h3: { fontSize: 14.5, bold: true, margin: [0, 11, 0, 4] },
+          h4: { fontSize: 12.5, bold: true, margin: [0, 10, 0, 4] },
+          h5: { fontSize: 11.5, bold: true, margin: [0, 9, 0, 3] },
+          h6: { fontSize: 11, bold: true, color: '#666672', margin: [0, 9, 0, 3] }
+        },
+        footer: function (page, total) {
+          return { text: page + ' / ' + total, alignment: 'center', fontSize: 9, color: '#9a9aa6', margin: [0, 24, 0, 0] };
+        },
+        content: blocks(tokens, { images: images })
+      };
+      return blobFromPdf(pdfMake.createPdf(dd));
     });
   });
 }
 
 /* ------------------------------------------------------------ inline text */
 
-function textRuns(tokens, ctx) {
+function textRuns(tokens) {
   var out = [];
   inlines(tokens).forEach(function (r) {
     if (r.br) { out.push({ text: '\n' }); return; }
@@ -90,7 +163,7 @@ function blocks(tokens, ctx) {
     switch (t.type) {
       case 'space': break;
       case 'heading':
-        out.push({ text: textRuns(t.tokens, ctx), style: 'h' + Math.min(t.depth, 6) });
+        out.push({ text: textRuns(t.tokens), style: 'h' + Math.min(t.depth, 6) });
         break;
       case 'paragraph': case 'text': {
         if (t.type === 'paragraph' && isImageOnlyParagraph(t)) {
@@ -107,7 +180,7 @@ function blocks(tokens, ctx) {
           });
           break;
         }
-        out.push({ text: textRuns(t.tokens != null ? t.tokens : [t], ctx), margin: [0, 3, 0, 8] });
+        out.push({ text: textRuns(t.tokens != null ? t.tokens : [t]), margin: [0, 3, 0, 8] });
         break;
       }
       case 'code':
@@ -153,7 +226,7 @@ function blocks(tokens, ctx) {
         out.push(list(t, ctx));
         break;
       case 'table':
-        out.push(table(t, ctx));
+        out.push(table(t));
         break;
       case 'hr':
         out.push({
@@ -167,7 +240,7 @@ function blocks(tokens, ctx) {
         break;
       }
       default:
-        if (t.tokens) out.push({ text: textRuns(t.tokens, ctx), margin: [0, 3, 0, 8] });
+        if (t.tokens) out.push({ text: textRuns(t.tokens), margin: [0, 3, 0, 8] });
     }
   });
   return out;
@@ -178,7 +251,7 @@ function list(t, ctx) {
     var stack = [];
     (item.tokens || []).forEach(function (bt) {
       if (bt.type === 'text' || bt.type === 'paragraph') {
-        var runsArr = textRuns(bt.tokens != null ? bt.tokens : [bt], ctx);
+        var runsArr = textRuns(bt.tokens != null ? bt.tokens : [bt]);
         if (item.task && stack.length === 0) {
           runsArr.unshift({ text: item.checked ? '[x] ' : '[  ] ', fontSize: 9.5, color: '#666672' });
         }
@@ -197,11 +270,11 @@ function list(t, ctx) {
   return node;
 }
 
-function table(t, ctx) {
+function table(t) {
   var aligns = (t.align || []).map(function (a) { return a || 'left'; });
   function cells(row, isHeader) {
     return row.map(function (c, i) {
-      var o = { text: c ? textRuns(c.tokens, ctx) : '', alignment: aligns[i] || 'left' };
+      var o = { text: c ? textRuns(c.tokens) : '', alignment: aligns[i] || 'left' };
       if (isHeader) { o.bold = true; o.fillColor = '#EFEDF6'; }
       return o;
     });
