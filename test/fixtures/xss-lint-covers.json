@@ -1,0 +1,12 @@
+{
+  "_comment": [
+    "DS §15 — this repo's declaration of what the XSS rule covers.",
+    "Product source only. build/build.mjs is tooling and is globally ignored."
+  ],
+  "covers": [
+    "src/exporters/html.js",
+    "src/core.js",
+    "src/common.js"
+  ],
+  "why": "html.js is the HTML export surface (htmlPage, wordHtml, printDoc). core.js is renderHTML/escapeHtml. common.js is the shared helpers those call. Not build/build.mjs — tooling, globally ignored, and naming it would be the uploadwizard-app failure mode (a green count on files that do not render HTML)."
+}
