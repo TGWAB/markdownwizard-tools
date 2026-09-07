@@ -129,17 +129,19 @@ jobs:
       # the scan is lenient — planting one `new Function(` in dist makes it
       # exit 1.
       #
-      # SCOPE, STATED SO A GREEN RUN IS NOT READ AS MORE THAN IT IS. This
+      # THE TARGET IS THE PUBLISHED SURFACE, NOT `dist` (DS §2, v2.71.0). This
       # package's `files` list ships BOTH `src` and `dist`, and its default
-      # export is `"." : "./src/index.js"` — so a consumer doing
-      # `import … from 'markdownwizard-tools'` gets the SOURCE, and only the
-      # `./iife` subpath gets what this scan covers. src/ scans clean today
-      # (all 8 files, exit 0), so nothing is hiding there; whether §2's target
-      # should widen for a package whose default export is source is a
-      # standards question, raised in tgwab-standards#173 rather than decided
-      # here. Widening this to `dist src` is a one-word change and is green.
+      # export is `"." : "./src/index.js"` — so a consumer writing
+      # `import … from 'markdownwizard-tools'` gets the SOURCE, and `dist`
+      # alone covered only the `./iife` subpath. That was a control aimed at
+      # the path most consumers do not use.
+      #
+      # `scripts/no-eval.sh` is re-vendored in the same change because it HAD
+      # TO BE: the previous copy read only "$1", so `dist src` would have
+      # scanned dist and dropped src silently — the widened gate would have
+      # looked widened and covered exactly what it did before.
       - name: No runtime code generation in built output (§2)
-        run: ./scripts/no-eval.sh dist
+        run: ./scripts/no-eval.sh dist src
 
       # Full tree, deliberately not --omit=dev (DS §15): the dev half is the
       # build toolchain, and what it writes into dist/ is what ships. Excluding it
