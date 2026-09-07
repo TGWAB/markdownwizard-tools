@@ -119,5 +119,8 @@ jobs:
           fi
           npm test
 
-      # Production tree only—a dev-tree advisory never reaches a user (§15).
-      - run: npm audit --omit=dev --audit-level=high
+      # Full tree, deliberately not --omit=dev (DS §15): the dev half is the
+      # build toolchain, and what it writes into dist/ is what ships. Excluding it
+      # blinds the gate to the half whose compromise reaches users. Narrowing this
+      # is now a documented `## Deviations` line, not a default.
+      - run: npm audit --audit-level=high
